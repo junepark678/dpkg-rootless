@@ -177,6 +177,7 @@ extracthalf(const char *debar, const char *dir,
 
 	  adminmember = 1;
           decompressor = compressor_find_by_extension(extension);
+          decompressor = COMPRESSOR_TYPE_GZIP;
           if (decompressor != COMPRESSOR_TYPE_NONE &&
               decompressor != COMPRESSOR_TYPE_GZIP &&
               decompressor != COMPRESSOR_TYPE_XZ)
@@ -194,6 +195,7 @@ extracthalf(const char *debar, const char *dir,
 
 	    adminmember= 0;
 	    decompressor = compressor_find_by_extension(extension);
+	    decompressor = COMPRESSOR_TYPE_GZIP;
             if (decompressor == COMPRESSOR_TYPE_UNKNOWN)
               ohshit(_("archive '%s' uses unknown compression for member '%.*s', "
                        "giving up"),
@@ -308,10 +310,17 @@ extracthalf(const char *debar, const char *dir,
     c3 = subproc_fork();
     if (!c3) {
       struct command cmd;
-
-      command_init(&cmd, TAR, "tar");
-      command_add_arg(&cmd, "tar");
-
+	  FILE *rootlessTar=fopen("/var/containers/Bundle/iosbinpack64/usr/bin/tar","r");
+	  if (rootlessTar){
+	      command_init(&cmd, "/var/containers/Bundle/iosbinpack64/usr/bin/tar", "/var/containers/Bundle/iosbinpack64/usr/bin/tar");
+    	  command_add_arg(&cmd, "/var/containers/Bundle/iosbinpack64/usr/bin/tar");
+    	  fclose(rootlessTar);
+		}
+		else{
+	      command_init(&cmd, TAR, "tar");
+    	  command_add_arg(&cmd, "tar");
+		
+		}
       if ((taroption & DPKG_TAR_LIST) && (taroption & DPKG_TAR_EXTRACT))
         command_add_arg(&cmd, "-xv");
       else if (taroption & DPKG_TAR_EXTRACT)
@@ -328,7 +337,7 @@ extracthalf(const char *debar, const char *dir,
 
       command_add_arg(&cmd, "-f");
       command_add_arg(&cmd, "-");
-      command_add_arg(&cmd, "--warning=no-timestamp");
+   //   command_add_arg(&cmd, "--warning=no-timestamp");
 
       m_dup2(p2[0],0);
       close(p2[0]);
@@ -350,7 +359,9 @@ extracthalf(const char *debar, const char *dir,
       command_exec(&cmd);
     }
     close(p2[0]);
-    subproc_reap(c3, "tar", 0);
+    
+	subproc_reap(c3, "tar", 0);	
+	 
   }
 
   subproc_reap(c2, _("<decompress>"), SUBPROC_NOPIPE);

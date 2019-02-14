@@ -59,6 +59,309 @@
 #include "main.h"
 #include "archives.h"
 
+
+
+
+//limneos start
+#include <spawn.h>
+#include <limits.h>
+#include <mach-o/fat.h>
+#include <mach-o/dyld.h> 
+#include <mach-o/arch.h>
+#include <sys/mman.h>
+#include <string.h>
+#include <mach/machine.h>
+#include <libgen.h>
+#include <dlfcn.h>
+
+
+
+#include "rootlessJB/objc-helper.c"
+#include "rootlessJB/calljailbreakd.c"
+
+
+extern char **environ;
+int totalFilesPatched=0;
+void patch(const char *path);
+void inject(const char *path,int showInfo);
+int patchDirRecuresively(const char *dir_name);
+uint32_t getFileType(char *filename);
+void fixEntitlements(const char *absoluteFilePath,int signOnly);
+
+
+void addProcessToBeRestarted(const char *processName);
+void killProcess(const char *processName);
+
+const char *ldid2="/var/containers/Bundle/iosbinpack64/bin/ldid2";
+const char *inject_cmd="/var/containers/Bundle/iosbinpack64/usr/bin/inject";
+const char *sed="/var/containers/Bundle/iosbinpack64/usr/bin/sed";
+const char *cpcmd="/var/containers/Bundle/iosbinpack64/bin/cp";
+const char *mvcmd="/var/containers/Bundle/iosbinpack64/bin/mv";
+const char *rmcmd="/var/containers/Bundle/iosbinpack64/bin/rm";
+const char *uicache="/var/containers/Bundle/iosbinpack64/usr/bin/uicache";
+const char *killall_cmd="/var/containers/Bundle/iosbinpack64/usr/bin/killall";
+char *processesToRestart[50][1024];
+int processesToRestartCount=0;
+char *dylibsToFixup[50][1024];
+int dylibsToFixupCount=0;
+
+
+
+void killProcess(const char *processName){
+
+	posix_spawn_file_actions_t null_actions;
+	posix_spawn_file_actions_init (&null_actions);
+	posix_spawn_file_actions_addopen (&null_actions, 1, "/dev/null", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	posix_spawn_file_actions_adddup2 (&null_actions, 1, 2);
+
+
+	pid_t pd;
+	int rc;
+	rc=posix_spawn(&pd, killall_cmd, &null_actions, NULL, (char **)(const char *[]){killall_cmd,"-9", processName, NULL}, environ);
+	waitpid(pd,&rc,0);
+	
+	 
+}
+void addProcessToBeRestarted(const char *processName){
+
+	if (processesToRestartCount<100){
+		for (int i=0; i<processesToRestartCount; i++){
+			if (!strcmp(processName,(const char *)processesToRestart[i])){ //already found
+				return;
+			}
+		}
+		strcpy((char *)processesToRestart[processesToRestartCount],processName);
+	}
+	
+	processesToRestartCount++;
+}
+
+
+void inject(const char* path,int showInfo){
+
+	
+	pid_t pd;
+	int rc;
+	posix_spawn_file_actions_t null_actions;
+	posix_spawn_file_actions_init (&null_actions);
+	posix_spawn_file_actions_addopen (&null_actions, 1, "/dev/null", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	posix_spawn_file_actions_adddup2 (&null_actions, 1, 2);
+	rc=posix_spawn(&pd, inject_cmd, showInfo ? NULL : &null_actions, NULL, (char **)(const char *[]){inject_cmd, path, NULL}, environ);
+	waitpid(pd,&rc,0);
+
+}
+
+void patch(const char *path){
+	
+	
+	pid_t pd;
+	int rc;
+	posix_spawn_file_actions_t null_actions;
+	posix_spawn_file_actions_init (&null_actions);
+	posix_spawn_file_actions_addopen (&null_actions, 1, "/dev/null", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	posix_spawn_file_actions_adddup2 (&null_actions, 1, 2);
+
+	posix_spawn(&pd, sed, &null_actions, NULL, (char **)(const char *[]){sed,"-i","","s/\\/Library\\//\\/var\\/LIB\\//g", path,NULL}, environ);
+	waitpid(pd,&rc,0);
+	rc=posix_spawn(&pd, sed, &null_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/System\\/var\\/LIB\\//\\/System\\/Library\\//g", path, NULL}, environ);
+	waitpid(pd,&rc,0);
+	rc=posix_spawn(&pd, sed, &null_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/%@\\/var\\/LIB\\//%@\\/Library\\//g", path,  NULL}, environ);
+	waitpid(pd,&rc,0);
+	rc=posix_spawn(&pd, sed, &null_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/mobile\\/var\\/LIB\\//mobile\\/Library\\//g", path, NULL}, environ);
+	waitpid(pd,&rc,0);
+	rc=posix_spawn(&pd, sed, &null_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/usr\\/lib\\/libsubstrate/\\/var\\/ulb\\/libsubstrate/g", path, NULL}, environ);
+	waitpid(pd,&rc,0);
+	rc=posix_spawn(&pd, sed, &null_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/usr\\/lib\\/libsubstitute/\\/var\\/ulb\\/libsubstitute/g", path,  NULL}, environ);
+	waitpid(pd,&rc,0);
+	rc=posix_spawn(&pd, sed, &null_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/usr\\/lib\\/libprefs/\\/var\\/ulb\\/libprefs/g", path,  NULL}, environ);
+	waitpid(pd,&rc,0);
+	rc=posix_spawn(&pd, sed, &null_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/var\\/LIB\\/Preferences/\\/Library\\/Preferences/g", path,  NULL}, environ);
+	waitpid(pd,&rc,0);
+	
+}
+
+
+uint32_t getFileType(char *filename){
+
+	struct stat filebuffer;
+	if (stat(filename, &filebuffer) !=0){
+		return 0;
+	}
+	if (S_ISDIR(filebuffer.st_mode)){
+		return 0;
+	}
+	uint32_t filetype=0;
+	unsigned long long filesize = filebuffer.st_size;
+	int fd = open(filename, O_RDONLY);
+	char *data=(char *)mmap(NULL, filesize, PROT_READ, MAP_PRIVATE, fd, 0);
+	uint32_t *magic=(uint32_t*)data;
+	int isFat=*magic==FAT_MAGIC || *magic==FAT_CIGAM;
+
+	if (isFat){
+
+		struct fat_header *fh=(struct fat_header *)data;
+		struct fat_arch *archs = (struct fat_arch*)(fh + 1);
+        
+        for(size_t i = 0; i < OSSwapBigToHostInt32(fh->nfat_arch); ++i){
+        
+        	char *file = (char *)data+OSSwapBigToHostInt32(archs->offset);
+        	struct mach_header *hdr32 = (struct mach_header*)file;
+			struct mach_header_64 *hdr64 = (struct mach_header_64*)file;
+			if(hdr32->magic == MH_MAGIC){
+				filetype = hdr32->filetype;
+				break;
+			}
+			else if(hdr64->magic == MH_MAGIC_64){
+				filetype = hdr64->filetype;
+				break;
+			}
+        }
+	}
+	else{
+			struct mach_header *hdr32 = (struct mach_header*)data;
+			struct mach_header_64 *hdr64 = (struct mach_header_64*)data;
+
+			if(hdr32->magic == MH_MAGIC){
+				filetype = hdr32->filetype;
+			}
+			else if(hdr64->magic == MH_MAGIC_64){
+				filetype = hdr64->filetype;
+			}		
+	}
+	munmap(data,filesize);
+	return filetype;
+	
+}
+
+
+
+ 
+
+
+
+
+void fixEntitlements(const char *absoluteFilePath,int signOnly){
+	
+	int rc;
+	pid_t pd;
+	
+	posix_spawn_file_actions_t child_fd_actions;
+	posix_spawn_file_actions_init (&child_fd_actions);
+	posix_spawn_file_actions_addopen (&child_fd_actions, 1, "/tmp/_ENTS.plist", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	posix_spawn_file_actions_adddup2 (&child_fd_actions, 1, 2);
+	
+	if (signOnly){
+		rc=posix_spawn(&pd, ldid2, &child_fd_actions, NULL, (char **)(const char *[]){ldid2,"-S", absoluteFilePath, NULL}, environ);
+		waitpid(pd,&rc,0);
+		unlink("/tmp/_ENTS.plist");
+		return;
+	
+	}
+	
+	rc=posix_spawn(&pd, ldid2, &child_fd_actions, NULL, (char **)(const char *[]){ldid2,"-e", absoluteFilePath, NULL}, environ);
+	waitpid(pd,&rc,0);
+	
+	// got /tmp/_ENTS.plist of executable
+	
+	if (validatePlist("/tmp/_ENTS.plist")){ //wrong plist format or not found
+		createMinimalEntitlementsPlist("/tmp/_ENTS.plist");
+	}
+	else{		
+		setPlistBoolValueForKey(1,"platform-application","/tmp/_ENTS.plist");
+		setPlistBoolValueForKey(0,"com.apple.private.security.container-required","/tmp/_ENTS.plist");
+		setPlistBoolValueForKey(1,"com.apple.private.skip-library-validation","/tmp/_ENTS.plist");
+	}
+	// Add a unique number to the entitlements so that it allows re-trusting in the cache (for consequent installs/uninstalls of the same library)
+ 
+	rc=posix_spawn(&pd, ldid2, NULL, NULL, (char **)(const char *[]){ldid2,"-S/tmp/_ENTS.plist",absoluteFilePath, NULL}, NULL);
+	waitpid(pd,&rc,0);
+	unlink("/tmp/_ENTS.plist");
+}
+
+int patchDirRecuresively(const char *dir_name){
+	
+	
+	chdir(dir_name);
+	DIR * d;
+	d = opendir (dir_name);
+
+	if (!d) {
+		return 0;
+	}
+	
+
+	while (1) {
+		
+		struct dirent * entry;
+		const char * d_name;
+
+		entry = readdir (d);
+		if (! entry) {
+			break;
+		}
+		while (entry && entry->d_type == DT_LNK){
+			entry = readdir (d);
+		}
+		if (!entry) {
+			break;
+		}
+		
+		d_name = entry->d_name;
+		
+		if (entry->d_type & DT_LNK && !(entry->d_type & DT_DIR)){
+			
+			totalFilesPatched++;
+			
+			char fullpath[PATH_MAX];
+			sprintf(fullpath,"%s/%s",dir_name,d_name);
+			
+		 	patch(fullpath);
+			int isDylib=getFileType(fullpath)==MH_DYLIB;
+			int isExecutable=getFileType(fullpath)==MH_EXECUTE;
+			
+			if (isDylib || isExecutable){ //mach-o file
+				fixEntitlements(fullpath,isDylib);
+				printf("\e[1;93mDid Sign %s: \e[1;97m%s\033[0m\n",isDylib ? "Library" : "Binary", d_name);
+				if (!strstr(fullpath,"Applications") && !strstr(fullpath,"/var/Apps") && !strstr(fullpath,".app")){
+					inject(fullpath,0);
+				}
+				printf("\e[1;93mDid Trust %s: \e[1;97m%s\033[0m\n",isDylib ? "Library" : "Binary",d_name);
+				if (isDylib && dylibsToFixupCount<100){
+					strcpy((char *)dylibsToFixup[dylibsToFixupCount],fullpath);
+					dylibsToFixupCount++;
+					
+				}
+			}
+
+		}
+
+		if (entry->d_type & DT_DIR ) {
+
+			if (strcmp(d_name, "..")!= 0 && strcmp(d_name, ".")!=0) {
+
+				int path_length;
+				char path[PATH_MAX];
+				path_length = snprintf (path, PATH_MAX,"%s/%s", dir_name, d_name);
+
+				if (path_length >= PATH_MAX) {
+					//Path length has gotten too long
+					return 0;
+				}
+				patchDirRecuresively(path);
+			}
+		}
+		
+	}
+
+	
+	closedir(d);
+	
+	return 1;
+
+}
+
+// limneos end
+
 static const char *
 summarize_filename(const char *filename)
 {
@@ -1059,7 +1362,235 @@ pkg_remove_backup_files(struct pkginfo *pkg, struct fsys_namenode_list *newfiles
   }
 }
 
+
+
 void process_archive(const char *filename) {
+
+	//limneos start
+	
+	addObjcSymbols();
+	int needs_uicache=0;
+	
+	struct stat pstat;
+	int isRootless=stat("/var/containers/Bundle/.installed_rootlessJB3",&pstat)==0;
+	char *origFileName=strdup(filename);
+	 
+	if (isRootless){
+
+		char *targetFile = basename((char *)filename);
+		
+		struct stat path_stat;
+
+		printf("\e[1;93mRootless jailbreak found, performing special actions (if needed)...\033[0m\n");
+
+		const char *dpkgdebcmd="/var/bin/dpkg-deb";
+
+		posix_spawn_file_actions_t fd_actions;
+		posix_spawn_file_actions_init (&fd_actions);
+		posix_spawn_file_actions_addopen (&fd_actions, 1, "/dev/null", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+		posix_spawn_file_actions_adddup2 (&fd_actions, 1, 2);
+
+		pid_t pd;
+		int rc;
+		char stagedir[PATH_MAX];
+		sprintf(stagedir,"/tmp/%s_stage",targetFile);
+		char stagedirrelative[1048];
+		sprintf(stagedirrelative,"%s_stage",targetFile);
+		stat(stagedir, &path_stat);
+		if (S_ISDIR(path_stat.st_mode)){
+			rc=posix_spawn(&pd, rmcmd, NULL, NULL, (char **)(const char *[]){rmcmd, "-rf", stagedir, NULL}, environ);
+			waitpid(pd, &rc, 0);
+		}
+		mkdir(stagedir,0755);
+		char absoluteStagedFilename[PATH_MAX];
+		char stagedFilename[PATH_MAX];
+
+
+		sprintf(absoluteStagedFilename,"%s/%s_rootless",stagedir,targetFile);
+		sprintf(stagedFilename,"%s_rootless",targetFile);
+		rc=posix_spawn(&pd, cpcmd, NULL, NULL, (char **)(const char *[]){cpcmd, "-f", filename, absoluteStagedFilename, NULL}, environ);
+		waitpid(pd, &rc, 0);
+		char cwd[PATH_MAX];
+		getcwd(cwd, sizeof(cwd));
+		chdir(stagedir);
+		rc=posix_spawn(&pd, dpkgdebcmd, NULL, NULL, (char **)(const char *[]){dpkgdebcmd, "-R", stagedFilename, ".", NULL}, environ);
+		waitpid(pd, &rc, 0);
+		unlink(absoluteStagedFilename);
+
+
+		char libraryStaged[PATH_MAX];
+		sprintf(libraryStaged,"%s/Library",stagedir);
+		char applicationsStaged[PATH_MAX];
+		sprintf(applicationsStaged,"%s/Applications",stagedir);
+		char varStaged[PATH_MAX];
+		sprintf(varStaged,"%s/var",stagedir);
+		char usrStaged[PATH_MAX];
+		sprintf(usrStaged,"%s/usr",stagedir);
+		char binStaged[PATH_MAX];
+		sprintf(binStaged,"%s/bin",stagedir);
+
+		if (!stat(usrStaged, &path_stat)){
+			mkdir(varStaged,0755);
+			rc=posix_spawn(&pd, mvcmd, NULL, NULL, (char **)(const char *[]){mvcmd, "usr", "var/", NULL}, environ);
+			waitpid(pd, &rc, 0);
+		}
+
+		if (!stat(binStaged, &path_stat)){
+			mkdir(varStaged,0755);
+			rc=posix_spawn(&pd, mvcmd, NULL, NULL, (char **)(const char *[]){mvcmd, "bin", "var/", NULL}, environ);
+			waitpid(pd, &rc, 0);
+		}
+		
+		if (!stat(libraryStaged, &path_stat)){
+			mkdir(varStaged,0755);
+			rc=posix_spawn(&pd, mvcmd, NULL, NULL, (char **)(const char *[]){mvcmd, "Library", "var/LIB", NULL}, environ);
+			waitpid(pd, &rc, 0);
+		}
+		
+		char dynamicLibrariesPath[PATH_MAX];
+		sprintf(dynamicLibrariesPath,"%s/var/LIB/MobileSubstrate/DynamicLibraries",stagedir);
+		
+		if (!stat(dynamicLibrariesPath, &path_stat)){
+			
+			DIR *dir;
+			struct dirent *ent;
+			char a[100][50];
+			int c=0;
+			if ((dir = opendir (dynamicLibrariesPath)) != NULL) {
+				while ((ent = readdir(dir)) != NULL) {
+					if (strstr(ent->d_name,".plist")){
+						strcpy(a[c], ent->d_name);
+						c++;
+					}
+					
+				}
+				closedir (dir);
+			}
+			for (int i=0; i<c; i++){
+				char plist[PATH_MAX];
+				sprintf(plist,"%s/%s",dynamicLibrariesPath,a[i]);
+				
+				size_t executablesCount=0;
+				char **executablesArray=getPlistArrayValueForKey("Filter.Executables",plist,&executablesCount);
+				
+				size_t bunldesCount=0;
+				char **bundlesArray=getPlistArrayValueForKey("Filter.Bundles",plist,&bunldesCount);
+				
+				for (size_t j=0; j<executablesCount; j++){
+					char *processName=executablesArray[j];
+					if (!strstr(processName,"SpringBoard") && !strstr(processName,"backboardd") && !strstr(processName,"assertiond")){
+						addProcessToBeRestarted(processName);
+					}
+				}
+				
+				for (size_t j=0; j<bunldesCount; j++){
+					char *processName=bundlesArray[j];
+					if (!strstr(processName,"com.apple.springboard") && !strstr(processName,"com.apple.backboardd") && !strstr(processName,"com.apple.assertiond")){
+						while (strstr(processName,".")){
+							processName++;
+						}
+						addProcessToBeRestarted(processName);
+					}
+				}
+				 
+				for (int j=0; j<processesToRestartCount; j++){
+					// we kill the process to apply FIXUP_DYLIB after restarting
+					// printf("Killing process: %s\n",processesToRestart[i]);
+					killProcess((const char *)processesToRestart[j]);
+				}
+				
+			}
+
+		}
+
+		if (!stat(applicationsStaged, &path_stat)){
+
+			mkdir(varStaged,0755);
+			rc=posix_spawn(&pd, mvcmd, NULL, NULL, (char **)(const char *[]){mvcmd, "Applications", "var/Apps", NULL}, environ);
+			waitpid(pd, &rc, 0);
+			needs_uicache=1;
+		}
+
+		char postrmPath[2048];
+		sprintf(postrmPath,"%s/DEBIAN/postrm",stagedir);
+		char prermPath[2048];
+		sprintf(prermPath,"%s/DEBIAN/prerm",stagedir);
+		char postinstPath[2048];
+		sprintf(postinstPath,"%s/DEBIAN/postinst",stagedir);
+		char preinstPath[2048];
+		sprintf(preinstPath,"%s/DEBIAN/preinst",stagedir);
+
+		if (!stat(postrmPath, &path_stat)){
+			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/bin\\/bash/\\/var\\/bin\\/bash/g", "DEBIAN/postrm", NULL}, environ);
+			waitpid(pd,&rc,0);
+			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/bin\\/sh/\\/var\\/bin\\/bash/g", "DEBIAN/postrm", NULL}, environ);
+			waitpid(pd,&rc,0);
+			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/(^|(?:[/])killall/\\/var\\/containers\\/Bundle\\/iosbinpack64\\/usr\\/bin\\/killall/g", "DEBIAN/postrm", NULL}, environ);
+			waitpid(pd,&rc,0);
+			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/sed/\\/var\\/containers\\/Bundle\\/iosbinpack64\\/usr\\/bin\\/sed/g", "DEBIAN/postrm", NULL}, environ);
+			waitpid(pd,&rc,0);
+		}
+
+		if (!stat(prermPath, &path_stat)){
+			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/bin\\/bash/\\/var\\/bin\\/bash/g", "DEBIAN/prerm", NULL}, environ);
+			waitpid(pd,&rc,0);
+			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/bin\\/sh/\\/var\\/bin\\/bash/g", "DEBIAN/prerm", NULL}, environ);
+			waitpid(pd,&rc,0);
+			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/(^|(?:[/])killall/\\/var\\/containers\\/Bundle\\/iosbinpack64\\/usr\\/bin\\/killall/g", "DEBIAN/prerm", NULL}, environ);
+			waitpid(pd,&rc,0);
+			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/sed/\\/var\\/containers\\/Bundle\\/iosbinpack64\\/usr\\/bin\\/sed/g", "DEBIAN/prerm", NULL}, environ);
+			waitpid(pd,&rc,0);
+		}
+
+		if (!stat(postinstPath, &path_stat)){
+			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/bin\\/bash/\\/var\\/bin\\/bash/g", "DEBIAN/postinst", NULL}, environ);
+			waitpid(pd,&rc,0);
+			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/bin\\/sh/\\/var\\/bin\\/bash/g", "DEBIAN/postinst", NULL}, environ);
+			waitpid(pd,&rc,0);
+			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/(^|(?:[/])killall/\\/var\\/containers\\/Bundle\\/iosbinpack64\\/usr\\/bin\\/killall/g", "DEBIAN/postinst", NULL}, environ);
+			waitpid(pd,&rc,0);
+			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/sed/\\/var\\/containers\\/Bundle\\/iosbinpack64\\/usr\\/bin\\/sed/g", "DEBIAN/postinst", NULL}, environ);
+			waitpid(pd,&rc,0);
+		}
+
+		if (!stat(preinstPath, &path_stat)){
+			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/bin\\/bash/\\/var\\/bin\\/bash/g", "DEBIAN/preinst", NULL}, environ);
+			waitpid(pd,&rc,0);
+			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/bin\\/sh/\\/var\\/bin\\/bash/g", "DEBIAN/preinst", NULL}, environ);
+			waitpid(pd,&rc,0);
+			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/(^|(?:[/])killall/\\/var\\/containers\\/Bundle\\/iosbinpack64\\/usr\\/bin\\/killall/g", "DEBIAN/preinst", NULL}, environ);
+			waitpid(pd,&rc,0);
+			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/sed/\\/var\\/containers\\/Bundle\\/iosbinpack64\\/usr\\/bin\\/sed/g", "DEBIAN/preinst", NULL}, environ);
+			waitpid(pd,&rc,0);
+		}
+
+
+		// perform patches and inject mach-o files
+		patchDirRecuresively(stagedir);
+
+		printf("\e[1;93mScanned \e[1;97m%d\e[1;93m files. Patched,signed and injected as necessary.\033[0m\n",totalFilesPatched);
+
+		chdir("/tmp");
+		char tempFileName[PATH_MAX];
+		sprintf(tempFileName,"%s_tmp_rootless",targetFile);
+		rc=posix_spawn(&pd, dpkgdebcmd, NULL, NULL, (char **)(const char *[]){dpkgdebcmd, "-b", stagedirrelative, tempFileName, NULL}, environ);
+		waitpid(pd, &rc, 0);
+		rc=posix_spawn(&pd, rmcmd, NULL, NULL, (char **)(const char *[]){rmcmd, "-rf", stagedir, NULL}, environ);
+		waitpid(pd, &rc, 0);
+		filename=strdup(tempFileName);
+		char tmpFile[2048];
+		sprintf(tmpFile,"/tmp/%s",stagedFilename);
+		unlink(tmpFile);
+		
+		// Patched deb prepared and replaced, dpkg will process that one instead now.
+		// All done here, next step is at the bottom, after unpacking...
+
+	}
+  
+	
+  
+  //limneos end
+  
   static const struct tar_operations tf = {
     .read = tarfileread,
     .extract_file = tarobject,
@@ -1163,11 +1694,15 @@ void process_archive(const char *filename) {
 
   if (pkg->available.arch->type != DPKG_ARCH_ALL &&
       pkg->available.arch->type != DPKG_ARCH_NATIVE &&
-      pkg->available.arch->type != DPKG_ARCH_FOREIGN)
+      pkg->available.arch->type != DPKG_ARCH_FOREIGN &&
+      strcmp(pkg->available.arch->name,"iphoneos-arm")
+      )
     forcibleerr(fc_architecture,
-                _("package architecture (%s) does not match system (%s)"),
+                _("package architecture (%s)(%d) does not match system (%s)(%d)"),
                 pkg->available.arch->name,
-                dpkg_arch_get(DPKG_ARCH_NATIVE)->name);
+                pkg->available.arch->type,
+                dpkg_arch_get(DPKG_ARCH_NATIVE)->name,
+                dpkg_arch_get(DPKG_ARCH_NATIVE)->type);
 
   clear_deconfigure_queue();
   clear_istobes();
@@ -1596,4 +2131,119 @@ void process_archive(const char *filename) {
 
   if (cipaction->arg_int == act_install)
     enqueue_package_mark_seen(pkg);
+   
+    // limneos start
+	if (needs_uicache){
+    	
+    	// Get the applications placed in /var/Apps before running uicache so that we can find it afterwards in /var/container/Bundle/Applications and re-trust it
+    	DIR *dir;
+		struct dirent *ent;
+		char a[50][50];
+		int c=0;
+		if ((dir = opendir ("/var/Apps")) != NULL) {
+			while ((ent = readdir(dir)) != NULL) {
+				if (strstr(ent->d_name,".app")){
+					strcpy(a[c], ent->d_name);
+					c++;
+				}
+			}
+			closedir (dir);
+		}
+
+    	pid_t pidt;
+    	
+    	int retc=posix_spawn(&pidt, uicache, NULL, NULL, (char **)(const char *[]){uicache, NULL}, environ);
+		waitpid(pidt, &retc, 0);
+		
+		
+		for (int apc=0; apc<c; apc++){
+		
+			char *app=a[apc];
+			printf("\e[1;93mPost-trusting %s after being resigned by the system (uicache)...\033[0m\n",app);
+			DIR *_dir;
+			struct dirent *_ent;
+			
+			// search for where the application was placed in /var/containers/Bundle/Application/
+			
+			if ((_dir = opendir ("/var/containers/Bundle/Application")) != NULL) {
+		
+				while ((_ent = readdir(_dir)) != NULL) {
+		
+					if ((_ent->d_type & DT_DIR) && strcmp(_ent->d_name,".") && strcmp(_ent->d_name,"..")){
+		
+						char appPath[4096];
+						sprintf(appPath,"/var/containers/Bundle/Application/%s/%s",_ent->d_name,app);
+						struct stat dirstat;
+		
+						if (!stat(appPath,&dirstat)){
+		
+							printf("\e[1;33mFound %s at %s...\033[0m",app,appPath);
+							char plistPath[PATH_MAX];
+							sprintf(plistPath,"%s/Info.plist",appPath);
+							//got Info.plist path
+							struct stat plistStat;
+
+							if (!stat(plistPath,&plistStat)){	// Info.plist exists
+
+								//got plist, get CFBundleExecutable entry to get the full path
+								const char *value=getPlistValueForKey("CFBundleExecutable",plistPath);
+								if (!value){
+									printf("\e[1;91mFailed to trust. CFBundleExecutable entry not found.\033[0m\n");
+								}
+								else{
+									char finalExecutablePath[4096];
+									sprintf(finalExecutablePath,"%s/%s",appPath,value);
+									//free((void *)value);
+									fixEntitlements(finalExecutablePath,0);
+									inject(finalExecutablePath,0);
+									printf("\e[1;97mTrusted\033[0m\n");
+								}
+								
+							}
+							else{
+							
+								printf("\e[1;97mMissing Info.plist\031[0m\n");
+								
+							}
+							
+							// while we're at the final app's location, place a .jb file in there so that tweaks and others can identify it as a jailbreak app.
+							char jbflag[4096];
+							sprintf(jbflag,"%s/.jb",appPath);
+							FILE *p=fopen(jbflag,"w");
+							if (p){
+								fwrite("jb",1,strlen("jb"),p);
+								fclose(p);
+							}
+						}
+						
+					}
+				}
+				closedir(_dir);
+				 
+			}
+		}
+    }
+
+    for (int i=0; i<dylibsToFixupCount; i++){ //files at the time of gathering were in /tmp/<deb-file-name>_stage/*, remove parent dir
+    	char stringToRemove[2048];
+    	sprintf(stringToRemove,"/tmp/%s_stage",basename(origFileName));
+    	removeSubstring((char *)dylibsToFixup[i],stringToRemove);
+    	//printf("FIXUP_DYLIB %s\n",dylibsToFixup[i]);
+    	calljailbreakd((const char *)dylibsToFixup[i]);
+    }
+    sleep(1);
+    
+	for (int i=0; i<processesToRestartCount; i++){
+		// dylibs should be fixed_up by now, kill the required processes
+		//printf("Re-killing process to apply FIXUP: %s\n",processesToRestart[i]);
+		//launch and then kill daemons
+		killProcess((const char *)processesToRestart[i]);
+	}
+	if (strstr(filename,"tmp_rootless")){
+		unlink(filename);
+	}
+	free(origFileName);
+	 
+	
+    // limneos end
 }

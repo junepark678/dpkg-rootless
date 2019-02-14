@@ -177,6 +177,11 @@ usage(const struct cmdinfo *ci, const char *value)
 
   m_output(stdout, _("<standard output>"));
 
+  printf(_(
+"\033[1;32mModified by \033[0m\x1b[37m@limneos\033[1;32m for \033[0m\033[31mrootlessJB\033[1;32m.\033[0m\n"));
+
+  m_output(stdout, _("<standard output>"));
+
   exit(0);
 }
 

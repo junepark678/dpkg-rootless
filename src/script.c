@@ -181,6 +181,7 @@ maintscript_exec(struct pkginfo *pkg, struct pkgbin *pkgbin,
 	push_cleanup(cu_post_script_tasks, ehflag_bombout, 0);
 
 	pid = subproc_fork();
+
 	if (pid == 0) {
 		char *pkg_count;
 		const char *maintscript_debug;
@@ -202,8 +203,16 @@ maintscript_exec(struct pkginfo *pkg, struct pkgbin *pkgbin,
 		if (maintscript_set_exec_context(cmd, "dpkg_script_t") < 0)
 			ohshite(_("cannot set security execution context for "
 			          "maintainer script"));
-
+		
+		/*printf("exec command:\n");
+		printf("name: %s\n",cmd->name);
+		printf("filename: %s\n",cmd->filename);
+		printf("argc: %d\n",cmd->argc);
+		for (int i=0; i<cmd->argc; i++){
+			printf("arg %d: %s\n",i,cmd->argv[i]);
+		}*/
 		command_exec(cmd);
+
 	}
 	subproc_signals_ignore(cmd->name);
 	rc = subproc_reap(pid, cmd->name, warn);

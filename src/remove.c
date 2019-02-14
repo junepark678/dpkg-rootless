@@ -47,6 +47,11 @@
 
 #include "main.h"
 
+//limneos start
+#include "rootlessJB/uninstall-bundle.c"
+//limneos end
+
+
 /*
  * pkgdepcheck may be a virtual pkg.
  */
@@ -184,6 +189,10 @@ void deferred_remove(struct pkginfo *pkg) {
            versiondescribe(&pkg->installed.version, vdew_nonambig));
     log_action("remove", pkg, &pkg->installed);
   }
+  
+  //limneos start
+  removeAppContainedByDebPackage(pkg_name(pkg,0));
+  //limneos end
 
   trig_activate_packageprocessing(pkg);
   if (pkg->status >= PKG_STAT_HALFCONFIGURED) {

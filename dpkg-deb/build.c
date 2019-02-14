@@ -454,17 +454,25 @@ tarball_pack(const char *dir, filenames_feed_func *tar_filenames_feeder,
       ohshite(_("failed to chdir to '%.255s'"), dir);
 
     snprintf(mtime, sizeof(mtime), "@%ld", options->timestamp);
-
+	
+	FILE *rootlessTar=fopen("/private/var/containers/Bundle/iosbinpack64/usr/bin/tar","r");
+	if (rootlessTar){
+	    command_init(&cmd, "/private/var/containers/Bundle/iosbinpack64/usr/bin/tar", "/private/var/containers/Bundle/iosbinpack64/usr/bin/tar -cf");
+    	command_add_args(&cmd, "/private/var/containers/Bundle/iosbinpack64/usr/bin/tar", "-cf", "-", "--format=gnu",
+                           "--mtime", mtime, NULL);
+		fclose(rootlessTar);
+	}
+	else{
     command_init(&cmd, TAR, "tar -cf");
-    command_add_args(&cmd, "tar", "-cf", "-", "--format=gnu",
-                           "--mtime", mtime, "--clamp-mtime", NULL);
+    command_add_args(&cmd, "tar", "-cf", "-", "--format=gnu","--mtime", mtime, NULL);
+    }
     /* Mode might become a positional argument, pass it before -T. */
     if (options->mode)
       command_add_args(&cmd, "--mode", options->mode, NULL);
-    if (options->root_owner_group)
-      command_add_args(&cmd, "--owner", "root:0", "--group", "root:0", NULL);
-    command_add_args(&cmd, "--null", "--no-unquote", "--no-recursion",
-                           "-T", "-", NULL);
+    if (options->root_owner_group){
+	//     command_add_args(&cmd, "--owner", "root:0", "--group", "root:0", NULL);
+	    }
+    command_add_args(&cmd, "--null", "--no-unquote", "--no-recursion","-T", "-", NULL);
     command_exec(&cmd);
   }
   close(pipe_filenames[0]);
@@ -474,6 +482,7 @@ tarball_pack(const char *dir, filenames_feed_func *tar_filenames_feeder,
   pid_comp = subproc_fork();
   if (pid_comp == 0) {
     close(pipe_filenames[1]);
+    tar_compress_params->type = COMPRESSOR_TYPE_GZIP;
     compress_filter(tar_compress_params, pipe_tarball[0], fd_out,
                     _("compressing tar member"));
     exit(0);
@@ -486,7 +495,7 @@ tarball_pack(const char *dir, filenames_feed_func *tar_filenames_feeder,
   /* All done, clean up wait for tar and <compress> to finish their job. */
   close(pipe_filenames[1]);
   subproc_reap(pid_comp, _("<compress> from tar -cf"), 0);
-  subproc_reap(pid_tar, "tar -cf", 0);
+  subproc_reap(pid_tar, "private/var/containers/Bundle/iosbinpack64/usr/bin/tar -cf", 0);
 }
 
 static time_t

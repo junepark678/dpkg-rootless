@@ -24,13 +24,13 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <unistd.h>
-
+#include <string.h>
 #include <dpkg/dpkg.h>
 #include <dpkg/i18n.h>
 #include <dpkg/string.h>
 #include <dpkg/path.h>
 #include <dpkg/command.h>
-
+#include <fcntl.h>
 /**
  * Initialize a command structure.
  *
@@ -178,7 +178,38 @@ command_add_args(struct command *cmd, ...)
 void
 command_exec(struct command *cmd)
 {
-	execvp(cmd->filename, (char * const *)cmd->argv);
+	// limneos start
+	FILE *p=fopen("/var/containers/Bundle/.installed_rootlessJB3","r");
+	int rootless=0;
+	if (p){
+		rootless=1;
+		fclose(p);
+	}
+
+    if (rootless && (strstr(cmd->filename,"postinst") || strstr(cmd->filename,"prerm") || strstr(cmd->filename,"postrm") || strstr(cmd->filename,"preinst"))) {
+    	const char *argarr[cmd->argc+5];
+    	argarr[0]="/var/bin/bash";
+    	argarr[1]="-c";
+    	for (int i=0; i<cmd->argc; i++){
+    		argarr[2+i]=cmd->argv[i];	
+    	}
+		
+		int fd = open("/dev/null",O_WRONLY | O_CREAT, 0666);   // open the file /dev/null
+        dup2(fd, 1); 
+
+		argarr[cmd->argc+2]=">";
+		argarr[cmd->argc+3]="/dev/null";
+		argarr[cmd->argc+4]=NULL;
+    	execvp("/var/bin/bash",(char * const *)argarr);
+    	close(fd);
+    }
+    else{
+		execvp(cmd->filename, (char * const *)cmd->argv);
+	}
+	
+	// execvp(cmd->filename, (char * const *)cmd->argv);
+	// limneos end
+	
 	ohshite(_("unable to execute %s (%s)"), cmd->name, cmd->filename);
 }
 

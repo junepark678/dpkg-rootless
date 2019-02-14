@@ -1,0 +1,6 @@
+autoreconf -f
+./autogen
+export CPPFLAGS="-I/usr/local/opt/ncurses/include"; export CFLAGS="-arch arm64 -isysroot $(xcrun -sdk iphoneos --show-sdk-path)"; export AR=ar;  ./configure --disable-dselect --disable-start-stop-daemon --host=x86_64-apple-darwin --target=arm64-apple-darwin --prefix= --disable-devel-docs
+make clean; make;
+make DESTDIR=$PWD/installdir install
+ldid2 -Slsdents.plist installdir/var/bin/dpkg

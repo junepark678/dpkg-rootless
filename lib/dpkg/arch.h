@@ -42,7 +42,7 @@ enum dpkg_arch_type {
 	DPKG_ARCH_ALL,
 	DPKG_ARCH_NATIVE,
 	DPKG_ARCH_FOREIGN,
-	DPKG_ARCH_UNKNOWN,
+	DPKG_ARCH_UNKNOWN
 };
 
 struct dpkg_arch {

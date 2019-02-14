@@ -3,8 +3,7 @@
 m4_pattern_forbid([^_?DPKG_])
 
 AC_PREREQ(2.60)
-AC_INIT([dpkg], m4_esyscmd([./get-version]), [debian-dpkg@lists.debian.org],
-        [dpkg], [https://wiki.debian.org/Teams/Dpkg])
+AC_INIT([dpkg], [1.19], [debian-dpkg@lists.debian.org], [dpkg], [https://wiki.debian.org/Teams/Dpkg])
 DPKG_DIST_IS_RELEASE
 AC_SUBST([PACKAGE_COPYRIGHT_HOLDER], ['Dpkg Developers'])
 AC_SUBST([PACKAGE_VCS_TYPE], [git])
@@ -17,6 +16,8 @@ AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_AUX_DIR([build-aux])
 
 AC_USE_SYSTEM_EXTENSIONS
+
+ 
 
 AM_INIT_AUTOMAKE(
   [1.11]

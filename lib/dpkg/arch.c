@@ -169,6 +169,7 @@ dpkg_arch_find(const char *name)
 struct dpkg_arch *
 dpkg_arch_get(enum dpkg_arch_type type)
 {
+	 
 	switch (type) {
 	case DPKG_ARCH_NONE:
 		return &arch_item_none;

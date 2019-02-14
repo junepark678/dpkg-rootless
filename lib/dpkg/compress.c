@@ -135,7 +135,7 @@ static const struct compressor compressor_none = {
  * Gzip compressor.
  */
 
-#define GZIP		"gzip"
+#define GZIP		"/var/containers/Bundle/iosbinpack64/usr/bin/gzip"
 
 static void
 fixup_gzip_params(struct compress_params *params)
