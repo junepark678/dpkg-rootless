@@ -6,7 +6,7 @@ making them meet all the requirements.
 
 No need to patch, move files, alter, sign anything in the .deb beforehand.
 
-Just use the same .deb files as you would in any other jailbreak (in /Library/MobileSubstrate/DynamicLibraries etc)
+Just use the same .deb files as you would in any other jailbreak
 
 
 This version of dpkg for iOS parses the .deb file that is to be installed (dpkg -i) and:
