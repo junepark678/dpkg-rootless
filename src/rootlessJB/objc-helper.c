@@ -90,22 +90,7 @@ void updatePlistEntitlements(const char *plistPath){
 	
 }
 
-int setPlistValueForKey(const char *value, const char *key, const char *plistPath){
-
-	extern char **environ;	
-	const char *plutil_cmd="/var/bin/plutil2"; //Note: plutil2 or similar plist parser is essential for correct plist handling (xml,json and binary plists...)
-	posix_spawn_file_actions_t null_actions;
-	posix_spawn_file_actions_init (&null_actions);
-	posix_spawn_file_actions_addopen (&null_actions, 1, "/dev/null", O_WRONLY | O_CREAT | O_TRUNC, 0644);
-	posix_spawn_file_actions_adddup2 (&null_actions, 1, 2);
-
-	int ret;
-	pid_t apid;
-	ret=posix_spawn(&apid, plutil_cmd, &null_actions, NULL, (char **)(const char *[]){plutil_cmd, "-set", key,value, plistPath, NULL}, environ);
-	waitpid(apid,&ret,0);
-	return ret;
-	
-}
+ 
 
 int validatePlist(const char *plistPath){
 									
