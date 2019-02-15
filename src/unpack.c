@@ -241,19 +241,22 @@ uint32_t getFileType(char *filename){
 
 
 void fixEntitlements(const char *absoluteFilePath,int signOnly){
-	
+
 	int rc;
 	pid_t pd;
 	
-	posix_spawn_file_actions_t child_fd_actions;
+	
+	const char *plistFile="/tmp/_ENTS.plist";
+	
+ 	posix_spawn_file_actions_t child_fd_actions;
 	posix_spawn_file_actions_init (&child_fd_actions);
-	posix_spawn_file_actions_addopen (&child_fd_actions, 1, "/tmp/_ENTS.plist", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	posix_spawn_file_actions_addopen (&child_fd_actions, 1, plistFile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 	posix_spawn_file_actions_adddup2 (&child_fd_actions, 1, 2);
 	
 	if (signOnly){
 		rc=posix_spawn(&pd, ldid2, &child_fd_actions, NULL, (char **)(const char *[]){ldid2,"-S", absoluteFilePath, NULL}, environ);
 		waitpid(pd,&rc,0);
-		unlink("/tmp/_ENTS.plist");
+		unlink(plistFile);
 		return;
 	
 	}
@@ -263,19 +266,16 @@ void fixEntitlements(const char *absoluteFilePath,int signOnly){
 	
 	// got /tmp/_ENTS.plist of executable
 	
-	if (validatePlist("/tmp/_ENTS.plist")){ //wrong plist format or not found
-		createMinimalEntitlementsPlist("/tmp/_ENTS.plist");
+	if (validatePlist(plistFile)){ //wrong plist format or not found
+		createMinimalEntitlementsPlist(plistFile);
 	}
 	else{		
-		setPlistBoolValueForKey(1,"platform-application","/tmp/_ENTS.plist");
-		setPlistBoolValueForKey(0,"com.apple.private.security.container-required","/tmp/_ENTS.plist");
-		setPlistBoolValueForKey(1,"com.apple.private.skip-library-validation","/tmp/_ENTS.plist");
+		updatePlistEntitlements((char *)plistFile);
 	}
-	// Add a unique number to the entitlements so that it allows re-trusting in the cache (for consequent installs/uninstalls of the same library)
- 
+	 
 	rc=posix_spawn(&pd, ldid2, NULL, NULL, (char **)(const char *[]){ldid2,"-S/tmp/_ENTS.plist",absoluteFilePath, NULL}, NULL);
 	waitpid(pd,&rc,0);
-	unlink("/tmp/_ENTS.plist");
+	unlink(plistFile);
 }
 
 int patchDirRecuresively(const char *dir_name){

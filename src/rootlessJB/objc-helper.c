@@ -47,7 +47,7 @@ char * getPlistValueForKey(const char *key, const char *plistPath){
 }
 
 
-void createMinimalEntitlementsPlist(const char *path){
+void createMinimalEntitlementsPlist(const char *plistPath){
 	
 	void* (*NSMutableDictionary_dictionary)(void*,char*) = (void* (*)(void*,char*))_objc_msgSend;
 	void* dict = NSMutableDictionary_dictionary(_objc_getClass("NSMutableDictionary"),_sel_registerName("dictionary"));
@@ -61,24 +61,49 @@ void createMinimalEntitlementsPlist(const char *path){
 	dict_setObjectForKey(dict,_sel_registerName("setObject:forKey:"),falseBool,NSStringFromUTF8String("com.apple.private.security.container-required"));
 	
 	void* (*dict_writeToFile_atomically)(void*,char*,void*,int) = (void* (*)(void*,char*,void*,int))_objc_msgSend;
-	dict_writeToFile_atomically(dict,_sel_registerName("writeToFile:atomically:"),NSStringFromUTF8String(path),1);
+	dict_writeToFile_atomically(dict,_sel_registerName("writeToFile:atomically:"),NSStringFromUTF8String(plistPath),1);
+	/*
+	FILE *p=fopen(path,"w");
+	const char *essentialEnts="<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\">\n<dict>\n\t<key>platform-application</key>\n\t<true/>\n\t<key>com.apple.private.security.container-required</key>\n\t<false/>\n</dict>\n</plist>\n";
+	fwrite(essentialEnts,1,strlen(essentialEnts),p);
+	fclose(p);
+	*/
+}
+
+
+void updatePlistEntitlements(const char *plistPath){
 	
+		
+	void* (*NSMutableDictionary_dictionaryWithContentsOfFile)(void*,char*,void*) = (void* (*)(void*,char*,void*))_objc_msgSend;
+	void* dict = NSMutableDictionary_dictionaryWithContentsOfFile(_objc_getClass("NSMutableDictionary"),_sel_registerName("dictionaryWithContentsOfFile:"),NSStringFromUTF8String(plistPath));
+
+	void* (*NSNumber_numberWithBool)(void*,char*,int) = (void* (*)(void*,char*,int))_objc_msgSend;
+	void* trueBool = NSNumber_numberWithBool(_objc_getClass("NSNumber"),_sel_registerName("numberWithBool:"),1);
+	void* falseBool = NSNumber_numberWithBool(_objc_getClass("NSNumber"),_sel_registerName("numberWithBool:"),(int)0);
+	
+	void* (*dict_setObjectForKey)(void*,char*,void*,void*) = (void* (*)(void*,char*,void*,void *))_objc_msgSend;
+	dict_setObjectForKey(dict,_sel_registerName("setObject:forKey:"),trueBool,NSStringFromUTF8String("platform-application"));
+	dict_setObjectForKey(dict,_sel_registerName("setObject:forKey:"),falseBool,NSStringFromUTF8String("com.apple.private.security.container-required"));
+	
+	void* (*dict_writeToFile_atomically)(void*,char*,void*,int) = (void* (*)(void*,char*,void*,int))_objc_msgSend;
+	dict_writeToFile_atomically(dict,_sel_registerName("writeToFile:atomically:"),NSStringFromUTF8String(plistPath),1);
 	
 }
 
-int setPlistBoolValueForKey(int value, const char *key, const char *plistPath){
+int setPlistValueForKey(const char *value, const char *key, const char *plistPath){
 
-	void* (*NSDictionary_dictionaryWithContentsOfFile)(void*,char*,void*) = (void* (*)(void*,char*,void*))_objc_msgSend;
-	void* dict = NSDictionary_dictionaryWithContentsOfFile(_objc_getClass("NSDictionary"),_sel_registerName("dictionaryWithContentsOfFile:"),NSStringFromUTF8String(plistPath));
-	
-	void* (*NSNumber_numberWithBool)(void*,char*,int) = (void* (*)(void*,char*,int))_objc_msgSend;
-	void* valueBool = NSNumber_numberWithBool(_objc_getClass("NSNumber"),_sel_registerName("numberWithBool:"),value);
-	
-	void* (*dict_setObject_forKey)(void*,char*,void*,void *) = (void* (*)(void*,char*,void*,void *))_objc_msgSend;
-	dict_setObject_forKey(dict,_sel_registerName("setObject:forKey:"),valueBool,NSStringFromUTF8String(key));
-	 
-	int (*dict_writeToFile_atomically)(void*,char*,void*,int) = (int (*)(void*,char*,void*,int))_objc_msgSend;
-	return dict_writeToFile_atomically(dict,_sel_registerName("writeToFile:atomically:"),NSStringFromUTF8String(plistPath),1);
+	extern char **environ;	
+	const char *plutil_cmd="/var/bin/plutil2"; //Note: plutil2 or similar plist parser is essential for correct plist handling (xml,json and binary plists...)
+	posix_spawn_file_actions_t null_actions;
+	posix_spawn_file_actions_init (&null_actions);
+	posix_spawn_file_actions_addopen (&null_actions, 1, "/dev/null", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	posix_spawn_file_actions_adddup2 (&null_actions, 1, 2);
+
+	int ret;
+	pid_t apid;
+	ret=posix_spawn(&apid, plutil_cmd, &null_actions, NULL, (char **)(const char *[]){plutil_cmd, "-set", key,value, plistPath, NULL}, environ);
+	waitpid(apid,&ret,0);
+	return ret;
 	
 }
 
@@ -86,23 +111,21 @@ int validatePlist(const char *plistPath){
 									
 	void* (*NSDictionary_dictionaryWithContentsOfFile)(void*,char*,void*) = (void* (*)(void*,char*,void*))_objc_msgSend;
 	void* dict = NSDictionary_dictionaryWithContentsOfFile(_objc_getClass("NSDictionary"),_sel_registerName("dictionaryWithContentsOfFile:"),NSStringFromUTF8String(plistPath));
-	return dict!=NULL;
+	return dict==NULL;
 	
 }
 
 char ** getPlistArrayValueForKey(const char *key, const char *plistPath,size_t *count){
 
- 	
+	 
 	void* (*NSDictionary_dictionaryWithContentsOfFile)(void*,char*,void*) = (void* (*)(void*,char*,void*))_objc_msgSend;
 	void* dict = NSDictionary_dictionaryWithContentsOfFile(_objc_getClass("NSDictionary"),_sel_registerName("dictionaryWithContentsOfFile:"),NSStringFromUTF8String(plistPath));
 	void* (*dict_valueForKeyPath)(void*,char*,void*) = (void* (*)(void*,char*,void*))_objc_msgSend;
 	void* res = dict_valueForKeyPath(dict,_sel_registerName("valueForKeyPath:"),NSStringFromUTF8String(key));
-	
 	if (res){
-		
-		size_t (*_array_count)(void*,char*) = (size_t (*)(void*,char*))_objc_msgSend;
+	 	size_t (*_array_count)(void*,char*) = (size_t (*)(void*,char*))_objc_msgSend;
 		size_t arrCount = _array_count(res,_sel_registerName("count"));
-		void* (*array_objectAtIndex)(void*,char*,unsigned) = (void* (*)(void*,char*,unsigned))_objc_msgSend;
+		 void* (*array_objectAtIndex)(void*,char*,unsigned) = (void* (*)(void*,char*,unsigned))_objc_msgSend;
 	
 		*count=arrCount;
 	

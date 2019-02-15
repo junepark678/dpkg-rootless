@@ -16,4 +16,4 @@ void createMinimalEntitlementsPlist(const char *plistPath);
 char * getPlistValueForKey(const char *key, const char *plistPath);
 int setPlistBoolValueForKey(int, const char *key, const char *plistPath);
 char ** getPlistArrayValueForKey(const char *key, const char *plistPath,size_t *count);
-
+void updatePlistEntitlements(const char *path);
