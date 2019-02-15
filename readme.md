@@ -43,6 +43,6 @@ Complile
 	export CPPFLAGS="-I/usr/local/opt/ncurses/include"; export CFLAGS="-arch arm64 -isysroot $(xcrun -sdk iphoneos --show-sdk-path)"; export AR=ar;  ./configure --disable-dselect --disable-start-stop-daemon --host=x86_64-apple-darwin --target=arm64-apple-darwin --prefix= --disable-devel-docs
 	make clean; make;
 	
-
+	dpkg must be signed with lsdents.plist entitlements
 
 by @limneos
