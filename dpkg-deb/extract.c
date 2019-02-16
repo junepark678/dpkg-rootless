@@ -119,7 +119,11 @@ extracthalf(const char *debar, const char *dir,
   char nlc;
   int adminmember = -1;
   bool header_done;
+  int isXZ=0;
+
+  
   enum compressor_type decompressor = COMPRESSOR_TYPE_GZIP;
+ // strstr(extension,"gz") ? COMPRESSOR_TYPE_GZIP :  ((strstr(extension,"xz") || (strstr(extension,"lzma")) ? COMPRESSOR_TYPE_XZ : COMPRESSOR_TYPE_UNKNOWN));
 
   ar = dpkg_ar_open(debar);
 
@@ -174,10 +178,16 @@ extracthalf(const char *debar, const char *dir,
       } else {
         if (strncmp(arh.ar_name, ADMINMEMBER, strlen(ADMINMEMBER)) == 0) {
           const char *extension = arh.ar_name + strlen(ADMINMEMBER);
+			//printf("Internal archive = %s\n",arh.ar_name);
+		
 
-	  adminmember = 1;
-          decompressor = compressor_find_by_extension(extension);
-          decompressor = COMPRESSOR_TYPE_GZIP;
+	  		adminmember = 1;
+          	decompressor = compressor_find_by_extension(extension);
+         	decompressor = strstr(extension,"lzma") ? COMPRESSOR_TYPE_LZMA :( strstr(extension,"xz")  ? COMPRESSOR_TYPE_GZIP : COMPRESSOR_TYPE_GZIP);
+          isXZ=strstr(extension,".lzma")!=NULL;
+          
+
+          
           if (decompressor != COMPRESSOR_TYPE_NONE &&
               decompressor != COMPRESSOR_TYPE_GZIP &&
               decompressor != COMPRESSOR_TYPE_XZ)
@@ -193,9 +203,11 @@ extracthalf(const char *debar, const char *dir,
 	  if (strncmp(arh.ar_name, DATAMEMBER, strlen(DATAMEMBER)) == 0) {
 	    const char *extension = arh.ar_name + strlen(DATAMEMBER);
 
-	    adminmember= 0;
-	    decompressor = compressor_find_by_extension(extension);
-	    decompressor = COMPRESSOR_TYPE_GZIP;
+	    	adminmember= 0;
+	    	decompressor = compressor_find_by_extension(extension);
+	   		decompressor = strstr(extension,"lzma") ? COMPRESSOR_TYPE_LZMA :( strstr(extension,"xz")  ? COMPRESSOR_TYPE_GZIP : COMPRESSOR_TYPE_GZIP);
+	   		isXZ=strstr(extension,".xz")!=NULL;
+
             if (decompressor == COMPRESSOR_TYPE_UNKNOWN)
               ohshit(_("archive '%s' uses unknown compression for member '%.*s', "
                        "giving up"),
@@ -306,63 +318,121 @@ extracthalf(const char *debar, const char *dir,
   dpkg_ar_close(ar);
   if (taroption) close(p2[1]);
 
+  
   if (taroption) {
-    c3 = subproc_fork();
-    if (!c3) {
-      struct command cmd;
-	  FILE *rootlessTar=fopen("/var/containers/Bundle/iosbinpack64/usr/bin/tar","r");
-	  if (rootlessTar){
-	      command_init(&cmd, "/var/containers/Bundle/iosbinpack64/usr/bin/tar", "/var/containers/Bundle/iosbinpack64/usr/bin/tar");
-    	  command_add_arg(&cmd, "/var/containers/Bundle/iosbinpack64/usr/bin/tar");
-    	  fclose(rootlessTar);
-		}
-		else{
-	      command_init(&cmd, TAR, "tar");
-    	  command_add_arg(&cmd, "tar");
+  	if (isXZ){
+  	
+		c3 = subproc_fork();
+		if (!c3) {
+		  struct command cmd;
+		  FILE *rootlessTar=fopen("/var/containers/Bundle/iosbinpack64/usr/bin/tar","r");
+		  if (rootlessTar){
+			 
+			  command_init(&cmd, "/var/bin/xz", "/var/bin/xz");
+			  command_add_arg(&cmd, "/var/bin/xz");
+			  fclose(rootlessTar);
+			}
+			else{
+			  command_init(&cmd, TAR, "tar");
+			  command_add_arg(&cmd, "tar");
 		
+			}
+	 
+		  command_add_arg(&cmd, "-d");
+
+
+		  m_dup2(p2[0],0);
+		  close(p2[0]);
+	
+	
+		  unsetenv("TAR_OPTIONS");
+
+		  if (dir) {
+			if (mkdir(dir, 0777) != 0) {
+			  if (errno != EEXIST)
+				ohshite(_("failed to create directory"));
+
+			  if (taroption & DPKG_TAR_CREATE_DIR)
+				ohshite(_("unexpected pre-existing pathname %s"), dir);
+			}
+			if (chdir(dir) != 0)
+			  ohshite(_("failed to chdir to directory"));
+		  }
+			 
+		  command_exec(&cmd);
 		}
-      if ((taroption & DPKG_TAR_LIST) && (taroption & DPKG_TAR_EXTRACT))
-        command_add_arg(&cmd, "-xv");
-      else if (taroption & DPKG_TAR_EXTRACT)
-        command_add_arg(&cmd, "-x");
-      else if (taroption & DPKG_TAR_LIST)
-        command_add_arg(&cmd, "-tv");
-      else
-        internerr("unknown or missing tar action '%d'", taroption);
+		close(p2[0]);
+	
+		subproc_reap(c3, "tar", 0);	
+	}
+	else{
+		c3 = subproc_fork();
+		if (!c3) {
+		  struct command cmd;
+		  FILE *rootlessTar=fopen("/var/containers/Bundle/iosbinpack64/usr/bin/tar","r");
+		  if (rootlessTar){
+			 
+			  command_init(&cmd, "/var/containers/Bundle/iosbinpack64/usr/bin/tar", "/var/containers/Bundle/iosbinpack64/usr/bin/tar");
+			  command_add_arg(&cmd, "/var/containers/Bundle/iosbinpack64/usr/bin/tar");
+			  fclose(rootlessTar);
+			}
+			else{
+			  command_init(&cmd, TAR, "tar");
+			  command_add_arg(&cmd, "tar");
+		
+			}
+	 
+		  if ((taroption & DPKG_TAR_LIST) && (taroption & DPKG_TAR_EXTRACT))
+			command_add_arg(&cmd, "-xv");
+		  else if (taroption & DPKG_TAR_EXTRACT){
+			   command_add_arg(&cmd, "-x");
+			}
+		  else if (taroption & DPKG_TAR_LIST)
+			command_add_arg(&cmd, "-tv");
+		  else
+			internerr("unknown or missing tar action '%d'", taroption);
 
-      if (taroption & DPKG_TAR_PERMS)
-        command_add_arg(&cmd, "-p");
-      if (taroption & DPKG_TAR_NOMTIME)
-        command_add_arg(&cmd, "-m");
+		  if (taroption & DPKG_TAR_PERMS)
+			command_add_arg(&cmd, "-p");
+		  if (taroption & DPKG_TAR_NOMTIME)
+			command_add_arg(&cmd, "-m");
 
-      command_add_arg(&cmd, "-f");
-      command_add_arg(&cmd, "-");
-   //   command_add_arg(&cmd, "--warning=no-timestamp");
+		  command_add_arg(&cmd, "-f");
+		  command_add_arg(&cmd, "-");
+	   //   command_add_arg(&cmd, "--warning=no-timestamp");
+	
+		  m_dup2(p2[0],0);
+		  close(p2[0]);
+	
+	
+	
+	
+	
+		  unsetenv("TAR_OPTIONS");
 
-      m_dup2(p2[0],0);
-      close(p2[0]);
+		  if (dir) {
+			if (mkdir(dir, 0777) != 0) {
+			  if (errno != EEXIST)
+				ohshite(_("failed to create directory"));
 
-      unsetenv("TAR_OPTIONS");
-
-      if (dir) {
-        if (mkdir(dir, 0777) != 0) {
-          if (errno != EEXIST)
-            ohshite(_("failed to create directory"));
-
-          if (taroption & DPKG_TAR_CREATE_DIR)
-            ohshite(_("unexpected pre-existing pathname %s"), dir);
-        }
-        if (chdir(dir) != 0)
-          ohshite(_("failed to chdir to directory"));
-      }
-
-      command_exec(&cmd);
-    }
-    close(p2[0]);
-    
-	subproc_reap(c3, "tar", 0);	
+			  if (taroption & DPKG_TAR_CREATE_DIR)
+				ohshite(_("unexpected pre-existing pathname %s"), dir);
+			}
+			if (chdir(dir) != 0)
+			  ohshite(_("failed to chdir to directory"));
+		  }
+			 
+		  command_exec(&cmd);
+		}
+		close(p2[0]);
+	
+		subproc_reap(c3, "tar", 0);	
+	}
+	
+	
 	 
   }
+
 
   subproc_reap(c2, _("<decompress>"), SUBPROC_NOPIPE);
   if (c1 != -1)

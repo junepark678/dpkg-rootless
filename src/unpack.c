@@ -1363,6 +1363,33 @@ pkg_remove_backup_files(struct pkginfo *pkg, struct fsys_namenode_list *newfiles
 }
 
 
+void patchDebianScript(const char *scriptPath){
+
+	posix_spawn_file_actions_t fd_actions;
+	posix_spawn_file_actions_init (&fd_actions);
+	posix_spawn_file_actions_addopen (&fd_actions, 1, "/dev/null", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	posix_spawn_file_actions_adddup2 (&fd_actions, 1, 2);
+
+	pid_t pd;
+	int rc;
+
+	rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/bin\\/bash/\\/var\\/bin\\/bash/g", scriptPath, NULL}, environ);
+	waitpid(pd,&rc,0);
+	rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/bin\\/sh/\\/var\\/bin\\/bash/g", scriptPath, NULL}, environ);
+	waitpid(pd,&rc,0);
+	rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/sed/\\/var\\/containers\\/Bundle\\/iosbinpack64\\/usr\\/bin\\/sed/g", scriptPath, NULL}, environ);
+	waitpid(pd,&rc,0);
+	rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/(^|((?:[var])[/])usr/\\//g", scriptPath, NULL}, environ);
+	waitpid(pd,&rc,0);			
+	rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\([[:blank:]]\\)\\/usr\\//\\1\\/var\\/usr\\//g", scriptPath,NULL}, environ);
+	waitpid(pd,&rc,0);
+	rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\([[:blank:]]\\)\\/bin\\//\\1\\/var\\/bin\\//g", scriptPath,NULL}, environ);
+	waitpid(pd,&rc,0);
+	rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\([[:blank:]]\\)\\/usr\\/sbin\\//\\1\\/var\\/sbin\\//g", scriptPath,NULL}, environ);
+	waitpid(pd,&rc,0);
+	
+}
+
 
 void process_archive(const char *filename) {
 
@@ -1521,47 +1548,19 @@ void process_archive(const char *filename) {
 		sprintf(preinstPath,"%s/DEBIAN/preinst",stagedir);
 
 		if (!stat(postrmPath, &path_stat)){
-			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/bin\\/bash/\\/var\\/bin\\/bash/g", "DEBIAN/postrm", NULL}, environ);
-			waitpid(pd,&rc,0);
-			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/bin\\/sh/\\/var\\/bin\\/bash/g", "DEBIAN/postrm", NULL}, environ);
-			waitpid(pd,&rc,0);
-			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/(^|(?:[/])killall/\\/var\\/containers\\/Bundle\\/iosbinpack64\\/usr\\/bin\\/killall/g", "DEBIAN/postrm", NULL}, environ);
-			waitpid(pd,&rc,0);
-			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/sed/\\/var\\/containers\\/Bundle\\/iosbinpack64\\/usr\\/bin\\/sed/g", "DEBIAN/postrm", NULL}, environ);
-			waitpid(pd,&rc,0);
+			patchDebianScript(postrmPath);
 		}
 
 		if (!stat(prermPath, &path_stat)){
-			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/bin\\/bash/\\/var\\/bin\\/bash/g", "DEBIAN/prerm", NULL}, environ);
-			waitpid(pd,&rc,0);
-			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/bin\\/sh/\\/var\\/bin\\/bash/g", "DEBIAN/prerm", NULL}, environ);
-			waitpid(pd,&rc,0);
-			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/(^|(?:[/])killall/\\/var\\/containers\\/Bundle\\/iosbinpack64\\/usr\\/bin\\/killall/g", "DEBIAN/prerm", NULL}, environ);
-			waitpid(pd,&rc,0);
-			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/sed/\\/var\\/containers\\/Bundle\\/iosbinpack64\\/usr\\/bin\\/sed/g", "DEBIAN/prerm", NULL}, environ);
-			waitpid(pd,&rc,0);
+			patchDebianScript(prermPath);
 		}
 
 		if (!stat(postinstPath, &path_stat)){
-			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/bin\\/bash/\\/var\\/bin\\/bash/g", "DEBIAN/postinst", NULL}, environ);
-			waitpid(pd,&rc,0);
-			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/bin\\/sh/\\/var\\/bin\\/bash/g", "DEBIAN/postinst", NULL}, environ);
-			waitpid(pd,&rc,0);
-			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/(^|(?:[/])killall/\\/var\\/containers\\/Bundle\\/iosbinpack64\\/usr\\/bin\\/killall/g", "DEBIAN/postinst", NULL}, environ);
-			waitpid(pd,&rc,0);
-			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/sed/\\/var\\/containers\\/Bundle\\/iosbinpack64\\/usr\\/bin\\/sed/g", "DEBIAN/postinst", NULL}, environ);
-			waitpid(pd,&rc,0);
+			patchDebianScript(postinstPath);
 		}
 
 		if (!stat(preinstPath, &path_stat)){
-			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/bin\\/bash/\\/var\\/bin\\/bash/g", "DEBIAN/preinst", NULL}, environ);
-			waitpid(pd,&rc,0);
-			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/bin\\/sh/\\/var\\/bin\\/bash/g", "DEBIAN/preinst", NULL}, environ);
-			waitpid(pd,&rc,0);
-			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/(^|(?:[/])killall/\\/var\\/containers\\/Bundle\\/iosbinpack64\\/usr\\/bin\\/killall/g", "DEBIAN/preinst", NULL}, environ);
-			waitpid(pd,&rc,0);
-			rc=posix_spawn(&pd, sed, &fd_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/sed/\\/var\\/containers\\/Bundle\\/iosbinpack64\\/usr\\/bin\\/sed/g", "DEBIAN/preinst", NULL}, environ);
-			waitpid(pd,&rc,0);
+			patchDebianScript(preinstPath);
 		}
 
 
@@ -1572,7 +1571,7 @@ void process_archive(const char *filename) {
 
 		chdir("/tmp");
 		char tempFileName[PATH_MAX];
-		sprintf(tempFileName,"%s_tmp_rootless",targetFile);
+		sprintf(tempFileName,"%s_tmp_rootless.deb",targetFile);
 		rc=posix_spawn(&pd, dpkgdebcmd, NULL, NULL, (char **)(const char *[]){dpkgdebcmd, "-b", stagedirrelative, tempFileName, NULL}, environ);
 		waitpid(pd, &rc, 0);
 		rc=posix_spawn(&pd, rmcmd, NULL, NULL, (char **)(const char *[]){rmcmd, "-rf", stagedir, NULL}, environ);
@@ -2240,10 +2239,11 @@ void process_archive(const char *filename) {
 		killProcess((const char *)processesToRestart[i]);
 	}
 	if (strstr(filename,"tmp_rootless")){
+	 
 		unlink(filename);
 	}
-	free(origFileName);
 	 
+	free(origFileName);
 	
     // limneos end
 }
