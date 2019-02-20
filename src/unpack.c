@@ -160,23 +160,59 @@ void patch(const char *path){
 	posix_spawn_file_actions_init (&null_actions);
 	posix_spawn_file_actions_addopen (&null_actions, 1, "/dev/null", O_WRONLY | O_CREAT | O_TRUNC, 0644);
 	posix_spawn_file_actions_adddup2 (&null_actions, 1, 2);
+	
+	int isBinaryPlist=0;
+	
+	if (!validatePlist(path)){
+		
+		void* (*NSData_dataWithContentsOfFile)(void*,char*,void*) = (void* (*)(void*,char*,void*))_objc_msgSend;
+		void* thedata = NSData_dataWithContentsOfFile(_objc_getClass("NSData"),_sel_registerName("dataWithContentsOfFile:"),NSStringFromUTF8String(path));
+		
+		void* (*NSPropertyListSerialization_propertyListWithData_options_format_error)(void*,char*,void*,unsigned int,unsigned int*,void**) = (void* (*)(void*,char*,void*,unsigned int,unsigned int*,void**))_objc_msgSend;
+		void *error=NULL;
+		unsigned int plistFormat=0;
+		void* plist = NSPropertyListSerialization_propertyListWithData_options_format_error(_objc_getClass("NSPropertyListSerialization"),_sel_registerName("propertyListWithData:options:format:error:"),thedata,0,&plistFormat,&error);
+		if (error){
+			printf("Plist error %s\n",path);
+		}
+		
+		if (plistFormat==200){
+		
+			posix_spawn_file_actions_t plutil_actions;
+			posix_spawn_file_actions_init (&plutil_actions);
+			posix_spawn_file_actions_addopen (&plutil_actions, 1, "/tmp/plist.tmp", O_WRONLY | O_CREAT | O_TRUNC, 0755);
+			posix_spawn_file_actions_adddup2 (&plutil_actions, 1, 2);
+			rc = posix_spawn(&pd, "/var/bin/plutil", &plutil_actions, NULL, (char **)(const char *[]){"/var/bin/plutil", path,NULL}, environ);
+			waitpid(pd,&rc,0);
+			// binary plist, convert to xml plist?
+			/*int (*plist_writeToFile_atomically)(void*,char*,void*,int) = (int (*)(void*,char*,void*,int))_objc_msgSend;
+			int result = plist_writeToFile_atomically(plist,_sel_registerName("writeToFile:atomically:"),NSStringFromUTF8String(path),1);
+			printf("re-writing plist as xml %s = %d\n",path);
+			*/
+			
+			isBinaryPlist=1;
+		}
+		
+	}
 
-	posix_spawn(&pd, sed, &null_actions, NULL, (char **)(const char *[]){sed,"-i","","s/\\/Library\\//\\/var\\/LIB\\//g", path,NULL}, environ);
-	waitpid(pd,&rc,0);
-	rc=posix_spawn(&pd, sed, &null_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/System\\/var\\/LIB\\//\\/System\\/Library\\//g", path, NULL}, environ);
-	waitpid(pd,&rc,0);
-	rc=posix_spawn(&pd, sed, &null_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/%@\\/var\\/LIB\\//%@\\/Library\\//g", path,  NULL}, environ);
-	waitpid(pd,&rc,0);
-	rc=posix_spawn(&pd, sed, &null_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/mobile\\/var\\/LIB\\//mobile\\/Library\\//g", path, NULL}, environ);
-	waitpid(pd,&rc,0);
-	rc=posix_spawn(&pd, sed, &null_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/usr\\/lib\\/libsubstrate/\\/var\\/ulb\\/libsubstrate/g", path, NULL}, environ);
-	waitpid(pd,&rc,0);
-	rc=posix_spawn(&pd, sed, &null_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/usr\\/lib\\/libsubstitute/\\/var\\/ulb\\/libsubstitute/g", path,  NULL}, environ);
-	waitpid(pd,&rc,0);
-	rc=posix_spawn(&pd, sed, &null_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/usr\\/lib\\/libprefs/\\/var\\/ulb\\/libprefs/g", path,  NULL}, environ);
-	waitpid(pd,&rc,0);
-	rc=posix_spawn(&pd, sed, &null_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/var\\/LIB\\/Preferences/\\/Library\\/Preferences/g", path,  NULL}, environ);
-	waitpid(pd,&rc,0);
+	if (!isBinaryPlist){
+		posix_spawn(&pd, sed, &null_actions, NULL, (char **)(const char *[]){sed,"-i","","s/\\/Library\\//\\/var\\/LIB\\//g", path,NULL}, environ);
+		waitpid(pd,&rc,0);
+		rc=posix_spawn(&pd, sed, &null_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/System\\/var\\/LIB\\//\\/System\\/Library\\//g", path, NULL}, environ);
+		waitpid(pd,&rc,0);
+		rc=posix_spawn(&pd, sed, &null_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/%@\\/var\\/LIB\\//%@\\/Library\\//g", path,  NULL}, environ);
+		waitpid(pd,&rc,0);
+		rc=posix_spawn(&pd, sed, &null_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/mobile\\/var\\/LIB\\//mobile\\/Library\\//g", path, NULL}, environ);
+		waitpid(pd,&rc,0);
+		rc=posix_spawn(&pd, sed, &null_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/usr\\/lib\\/libsubstrate/\\/var\\/ulb\\/libsubstrate/g", path, NULL}, environ);
+		waitpid(pd,&rc,0);
+		rc=posix_spawn(&pd, sed, &null_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/usr\\/lib\\/libsubstitute/\\/var\\/ulb\\/libsubstitute/g", path,  NULL}, environ);
+		waitpid(pd,&rc,0);
+		rc=posix_spawn(&pd, sed, &null_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/usr\\/lib\\/libprefs/\\/var\\/ulb\\/libprefs/g", path,  NULL}, environ);
+		waitpid(pd,&rc,0);
+		rc=posix_spawn(&pd, sed, &null_actions, NULL, (char **)(const char *[]){sed,"-i", "", "s/\\/var\\/LIB\\/Preferences/\\/Library\\/Preferences/g", path,  NULL}, environ);
+		waitpid(pd,&rc,0);
+	}
 	
 }
 
@@ -310,28 +346,32 @@ int patchDirRecuresively(const char *dir_name){
 		
 		if (entry->d_type & DT_LNK && !(entry->d_type & DT_DIR)){
 			
-			totalFilesPatched++;
+			//if (strcmp(d_name,"Info.plist")){
+				totalFilesPatched++;
 			
-			char fullpath[PATH_MAX];
-			sprintf(fullpath,"%s/%s",dir_name,d_name);
+				char fullpath[PATH_MAX];
+				sprintf(fullpath,"%s/%s",dir_name,d_name);
+				//printf("Patching %s..\n",fullpath);
+			 	patch(fullpath);
+				int isDylib=getFileType(fullpath)==MH_DYLIB;
+				int isExecutable=getFileType(fullpath)==MH_EXECUTE;
 			
-		 	patch(fullpath);
-			int isDylib=getFileType(fullpath)==MH_DYLIB;
-			int isExecutable=getFileType(fullpath)==MH_EXECUTE;
 			
-			if (isDylib || isExecutable){ //mach-o file
-				fixEntitlements(fullpath,isDylib);
-				printf("\e[1;93mDid Sign %s: \e[1;97m%s\033[0m\n",isDylib ? "Library" : "Binary", d_name);
-				if (!strstr(fullpath,"Applications") && !strstr(fullpath,"/var/Apps") && !strstr(fullpath,".app")){
-					inject(fullpath,0);
-				}
-				printf("\e[1;93mDid Trust %s: \e[1;97m%s\033[0m\n",isDylib ? "Library" : "Binary",d_name);
-				if (isDylib && dylibsToFixupCount<100){
-					strcpy((char *)dylibsToFixup[dylibsToFixupCount],fullpath);
-					dylibsToFixupCount++;
+				if (isDylib || isExecutable){ //mach-o file
 					
+					fixEntitlements(fullpath,isDylib);
+					printf("\e[1;93mDid Sign %s: \e[1;97m%s\033[0m\n",isDylib ? "Library" : "Binary", d_name);
+					if (!strstr(fullpath,"Applications") && !strstr(fullpath,"/var/Apps") && !strstr(fullpath,".app")){
+						inject(fullpath,0);
+					}
+					printf("\e[1;93mDid Trust %s: \e[1;97m%s\033[0m\n",isDylib ? "Library" : "Binary",d_name);
+					if (isDylib && dylibsToFixupCount<100){
+						strcpy((char *)dylibsToFixup[dylibsToFixupCount],fullpath);
+						dylibsToFixupCount++;
+					
+					}
 				}
-			}
+			//}
 
 		}
 
@@ -1572,7 +1612,7 @@ void process_archive(const char *filename) {
 		chdir("/tmp");
 		char tempFileName[PATH_MAX];
 		sprintf(tempFileName,"%s_tmp_rootless.deb",targetFile);
-		rc=posix_spawn(&pd, dpkgdebcmd, NULL, NULL, (char **)(const char *[]){dpkgdebcmd, "-b", stagedirrelative, tempFileName, NULL}, environ);
+		rc=posix_spawn(&pd, dpkgdebcmd, NULL, NULL, (char **)(const char *[]){dpkgdebcmd, "-b", "-Zgzip",stagedirrelative, tempFileName, NULL}, environ);
 		waitpid(pd, &rc, 0);
 		rc=posix_spawn(&pd, rmcmd, NULL, NULL, (char **)(const char *[]){rmcmd, "-rf", stagedir, NULL}, environ);
 		waitpid(pd, &rc, 0);

@@ -48,6 +48,9 @@
 #include <dpkg/ar.h>
 #include <dpkg/deb-version.h>
 #include <dpkg/options.h>
+#include <spawn.h>
+#include <sys/wait.h>
+#include <libgen.h>
 
 #include "dpkg-deb.h"
 
@@ -101,6 +104,24 @@ read_line(int fd, char *buf, size_t min_size, size_t max_size)
   return line_size;
 }
 
+void execAndWait(char**cmd);
+void execAndWait(char**cmd){
+	
+	posix_spawn_file_actions_t null_actions;
+	posix_spawn_file_actions_init (&null_actions);
+	posix_spawn_file_actions_addopen (&null_actions, 1, "/dev/null", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	posix_spawn_file_actions_adddup2 (&null_actions, 1, 2);
+
+
+
+	pid_t pd;
+	int rc;
+	extern char **environ;
+	rc=posix_spawn(&pd,cmd[0],&null_actions,NULL,(char **)cmd,environ);
+	waitpid(pd,&rc,0);
+	
+}
+
 void
 extracthalf(const char *debar, const char *dir,
             enum dpkg_tar_options taroption, int admininfo)
@@ -120,8 +141,82 @@ extracthalf(const char *debar, const char *dir,
   int adminmember = -1;
   bool header_done;
   int isXZ=0;
+  
+  //we've got a deb, ar -x it, uncompress xz parts, re-build in -%sxz_fixed.deb, use -%sxz_fixed.deb deb as input debar
+  
+  struct stat debstat;
+  char wd[4096];
+  getcwd(wd,4096);
 
   
+  if (((taroption & DPKG_TAR_EXTRACT) || (taroption & DPKG_TAR_LIST)) &&  !stat(debar,&debstat)){
+	
+	  	//printf("DOING MANUAL WORK TO CHECK IF DEB HAS XZ...\n");
+		char *predebar = strdup(debar);
+  		char *debarOnly=basename(predebar);
+		int foundxz=0;
+  		char tmpstagedir[4096];
+  		sprintf(tmpstagedir,"/tmp/%s.tmp_haha",debarOnly);
+  		if (!stat(tmpstagedir,&debstat)){
+
+			execAndWait((char **)(const char *[]){"/var/bin/rm","-rf",tmpstagedir,NULL});
+
+  		}
+  		
+	  	mkdir(tmpstagedir,0755);
+	  	execAndWait((char **)(const char *[]){"/var/bin/cp",debarOnly,tmpstagedir,NULL});
+	  	chdir(tmpstagedir);	  	
+	  	execAndWait((char **)(const char *[]){"/var/bin/ar","-x",debarOnly,NULL});
+	  	execAndWait((char **)(const char *[]){"/var/bin/rm","-f",debarOnly,NULL});
+	  	char controlTarXZInTmp[2048];
+	  	char dataTarXZInTmp[2048];
+	  	sprintf(controlTarXZInTmp,"%s/control.tar.xz",tmpstagedir);
+	  	sprintf(dataTarXZInTmp,"%s/data.tar.xz",tmpstagedir);
+	  	char controlTarInTmp[2048];
+	  	char dataTarInTmp[2048];
+	  	sprintf(controlTarInTmp,"%s/control.tar",tmpstagedir);
+	  	sprintf(dataTarInTmp,"%s/data.tar",tmpstagedir);
+	  	char controlTarGZInTmp[2048];
+	  	char dataTarGZInTmp[2048];
+	  	sprintf(controlTarGZInTmp,"%s/control.tar.gz",tmpstagedir);
+	  	sprintf(dataTarGZInTmp,"%s/data.tar.gz",tmpstagedir);
+
+	  	if (!stat("control.tar.xz",&debstat)){
+	  		foundxz=1;
+			execAndWait((char **)(const char *[]){"/var/bin/xz","-d","control.tar.xz",NULL});
+			execAndWait((char **)(const char *[]){"/var/usr/bin/gzip","control.tar",NULL});
+		}
+
+		if (!stat("data.tar.xz",&debstat)){
+			foundxz=1;
+			execAndWait((char **)(const char *[]){"/var/bin/xz","-d","data.tar.xz",NULL});
+			execAndWait((char **)(const char *[]){"/var/usr/bin/gzip","data.tar",NULL});
+	  	}
+	  	if (foundxz){
+	  		
+		  	if (!stat("data.tar",&debstat)){
+				execAndWait((char **)(const char *[]){"/var/usr/bin/gzip","data.tar",NULL});
+	  		}
+		  	if (!stat("control.tar",&debstat)){
+				execAndWait((char **)(const char *[]){"/var/usr/bin/gzip","control.tar",NULL});
+	  		}
+		  	execAndWait((char **)(const char *[]){"/var/bin/ar","r",debarOnly,"debian-binary","control.tar.gz","data.tar.gz",NULL}); 	
+			char debOriginalPath[4096];
+			sprintf(debOriginalPath,"%s/%s",wd,debar);
+			execAndWait((char **)(const char *[]){"/var/bin/cp","-f",debarOnly,debOriginalPath,NULL});
+			
+			
+		  	
+	  	}
+	  	stat(tmpstagedir,&debstat);
+		if(S_ISDIR(debstat.st_mode)){
+			execAndWait((char **)(const char *[]){"/var/bin/rm","-rf",tmpstagedir,NULL});
+		}
+	  	 
+	}
+	chdir(wd);	  		
+
+//  printf("DEBMAGIC = %s\n",DEBMAGIC);
   enum compressor_type decompressor = COMPRESSOR_TYPE_GZIP;
  // strstr(extension,"gz") ? COMPRESSOR_TYPE_GZIP :  ((strstr(extension,"xz") || (strstr(extension,"lzma")) ? COMPRESSOR_TYPE_XZ : COMPRESSOR_TYPE_UNKNOWN));
 
@@ -207,7 +302,8 @@ extracthalf(const char *debar, const char *dir,
 	    	decompressor = compressor_find_by_extension(extension);
 	   		decompressor = strstr(extension,"lzma") ? COMPRESSOR_TYPE_LZMA :( strstr(extension,"xz")  ? COMPRESSOR_TYPE_GZIP : COMPRESSOR_TYPE_GZIP);
 	   		isXZ=strstr(extension,".xz")!=NULL;
-
+	   		
+	   		
             if (decompressor == COMPRESSOR_TYPE_UNKNOWN)
               ohshit(_("archive '%s' uses unknown compression for member '%.*s', "
                        "giving up"),
@@ -319,53 +415,10 @@ extracthalf(const char *debar, const char *dir,
   if (taroption) close(p2[1]);
 
   
+  
   if (taroption) {
-  	if (isXZ){
   	
-		c3 = subproc_fork();
-		if (!c3) {
-		  struct command cmd;
-		  FILE *rootlessTar=fopen("/var/containers/Bundle/iosbinpack64/usr/bin/tar","r");
-		  if (rootlessTar){
-			 
-			  command_init(&cmd, "/var/bin/xz", "/var/bin/xz");
-			  command_add_arg(&cmd, "/var/bin/xz");
-			  fclose(rootlessTar);
-			}
-			else{
-			  command_init(&cmd, TAR, "tar");
-			  command_add_arg(&cmd, "tar");
-		
-			}
-	 
-		  command_add_arg(&cmd, "-d");
-
-
-		  m_dup2(p2[0],0);
-		  close(p2[0]);
-	
-	
-		  unsetenv("TAR_OPTIONS");
-
-		  if (dir) {
-			if (mkdir(dir, 0777) != 0) {
-			  if (errno != EEXIST)
-				ohshite(_("failed to create directory"));
-
-			  if (taroption & DPKG_TAR_CREATE_DIR)
-				ohshite(_("unexpected pre-existing pathname %s"), dir);
-			}
-			if (chdir(dir) != 0)
-			  ohshite(_("failed to chdir to directory"));
-		  }
-			 
-		  command_exec(&cmd);
-		}
-		close(p2[0]);
-	
-		subproc_reap(c3, "tar", 0);	
-	}
-	else{
+  	 
 		c3 = subproc_fork();
 		if (!c3) {
 		  struct command cmd;
@@ -427,7 +480,7 @@ extracthalf(const char *debar, const char *dir,
 		close(p2[0]);
 	
 		subproc_reap(c3, "tar", 0);	
-	}
+	 
 	
 	
 	 
