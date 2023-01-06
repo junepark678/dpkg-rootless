@@ -216,8 +216,8 @@ cleanup();
 note('Querying information from diverts db (1)');
 
 install_diversions(<<'EOF');
-/bin/sh
-/bin/sh.distrib
+/var/jb/bin/sh
+/var/jb/bin/sh.distrib
 dash
 /usr/share/man/man1/sh.1.gz
 /usr/share/man/man1/sh.distrib.1.gz
@@ -227,7 +227,7 @@ dash
 binutils-multiarch
 EOF
 
-my $di_dash = "diversion of /bin/sh to /bin/sh.distrib by dash\n";
+my $di_dash = "diversion of /var/jb/bin/sh to /var/jb/bin/sh.distrib by dash\n";
 my $di_dashman = "diversion of /usr/share/man/man1/sh.1.gz to /usr/share/man/man1/sh.distrib.1.gz by dash\n";
 my $di_nm = "diversion of /usr/bin/nm to /usr/bin/nm.single by binutils-multiarch\n";
 
@@ -241,10 +241,10 @@ call_divert_sort(['--list', '???????'], expect_stdout => $di_dash, expect_stderr
 call_divert_sort(['--list', '*/sh'], expect_stdout => $di_dash, expect_stderr => '');
 call_divert_sort(['--list', '/bin/*'], expect_stdout => $di_dash, expect_stderr => '');
 call_divert_sort(['--list', 'binutils-multiarch'], expect_stdout => $di_nm, expect_stderr => '');
-call_divert_sort(['--list', '/bin/sh'], expect_stdout => $di_dash, expect_stderr => '');
-call_divert_sort(['--list', '--', '/bin/sh'], expect_stdout => $di_dash, expect_stderr => '');
+call_divert_sort(['--list', '/var/jb/bin/sh'], expect_stdout => $di_dash, expect_stderr => '');
+call_divert_sort(['--list', '--', '/var/jb/bin/sh'], expect_stdout => $di_dash, expect_stderr => '');
 call_divert_sort(['--list', '/usr/bin/nm.single'], expect_stdout => $di_nm, expect_stderr => '');
-call_divert_sort(['--list', '/bin/sh', '/usr/share/man/man1/sh.1.gz'], expect_stdout => $di_dash . $di_dashman,
+call_divert_sort(['--list', '/var/jb/bin/sh', '/usr/share/man/man1/sh.1.gz'], expect_stdout => $di_dash . $di_dashman,
             expect_stderr => '');
 
 cleanup();
@@ -252,8 +252,8 @@ cleanup();
 note('Querying information from diverts db (2)');
 
 install_diversions(<<'EOF');
-/bin/sh
-/bin/sh.distrib
+/var/jb/bin/sh
+/var/jb/bin/sh.distrib
 dash
 /bin/true
 /bin/true.coreutils
@@ -261,12 +261,12 @@ dash
 EOF
 
 call_divert(['--listpackage', 'foo', 'bar'], expect_failure => 1);
-call_divert(['--listpackage', '/bin/sh'], expect_stdout => "dash\n", expect_stderr => '');
+call_divert(['--listpackage', '/var/jb/bin/sh'], expect_stdout => "dash\n", expect_stderr => '');
 call_divert(['--listpackage', '/bin/true'], expect_stdout => "LOCAL\n", expect_stderr => '');
 call_divert(['--listpackage', '/bin/false'], expect_stdout => '', expect_stderr => '');
 
-call_divert(['--truename', '/bin/sh'], expect_stdout => "/bin/sh.distrib\n", expect_stderr => '');
-call_divert(['--truename', '/bin/sh.distrib'], expect_stdout => "/bin/sh.distrib\n", expect_stderr => '');
+call_divert(['--truename', '/var/jb/bin/sh'], expect_stdout => "/var/jb/bin/sh.distrib\n", expect_stderr => '');
+call_divert(['--truename', '/var/jb/bin/sh.distrib'], expect_stdout => "/var/jb/bin/sh.distrib\n", expect_stderr => '');
 call_divert(['--truename', '/bin/something'], expect_stdout => "/bin/something\n", expect_stderr => '');
 
 cleanup();
@@ -461,8 +461,8 @@ note('Remove diversions');
 
 install_diversions('');
 
-call_divert(['--no-rename', '--remove', '/bin/sh'], expect_stdout_like => qr/No diversion/, expect_stderr => '');
-call_divert(['--no-rename', '--remove', '--quiet', '/bin/sh'], expect_stdout => '', expect_stderr => '');
+call_divert(['--no-rename', '--remove', '/var/jb/bin/sh'], expect_stdout_like => qr/No diversion/, expect_stderr => '');
+call_divert(['--no-rename', '--remove', '--quiet', '/var/jb/bin/sh'], expect_stdout => '', expect_stderr => '');
 
 cleanup();
 
@@ -571,7 +571,7 @@ SKIP: {
 }
 
 install_diversions(<<'EOF');
-/bin/sh
+/var/jb/bin/sh
 EOF
 
 call_divert_sort(['--list'], expect_failure => 1,
@@ -579,7 +579,7 @@ call_divert_sort(['--list'], expect_failure => 1,
                  expect_stdout => '');
 
 install_diversions(<<'EOF');
-/bin/sh
+/var/jb/bin/sh
 bash
 EOF
 
